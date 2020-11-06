@@ -1,0 +1,70 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Setup IAM user for GitHub Actions and IAM role for CloudFormation
+
+Parameters:
+  GithubActionsUserName:
+    Type: String
+    Default: github-actions-cfn-deploy
+  CloudFormationDeploymentRoleName: 
+    Type: String
+    Default: github-actions-cfn-deply-role
+  
+Resources:
+  GithubActionsUser:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: !Ref GithubActionsUserName
+
+  GithubActionsUserPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      Users:
+        - !Ref GithubActionsUser
+      PolicyName: allow-github-actions-cfn-deploy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Action:
+              - "cloudformation:*"
+              - "lambda:*"
+            Effect: Allow
+            Resource: "*"
+          - Action: "cloudformation:DeleteStack"
+            Effect: Deny
+            Resource: "*"
+          - Action: "iam:PassRole"
+            Effect: Allow
+            Resource: !GetAtt CloudFormationDeploymentRole.Arn
+
+  GithubActionsUserAccessKey:
+    Type: AWS::IAM::AccessKey
+    Properties:
+      UserName: !Ref GithubActionsUser
+      Serial: 1
+
+  GithubActionsCredentials:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Ref GithubActionsUserName
+      SecretString: !Sub |
+        {
+          "AccessKeyId":"${GithubActionsUserAccessKey}",
+          "SecretAccessKey":"${GithubActionsUserAccessKey.SecretAccessKey}"
+        }
+        
+  # The permissions that the CloudFormation stack deployments will have
+  CloudFormationDeploymentRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref CloudFormationDeploymentRoleName
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - cloudformation.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AWSLambdaFullAccess
